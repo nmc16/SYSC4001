@@ -9,12 +9,38 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/msg.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <errno.h>
 #include "message.h"
 
 char *name;
+long int init_code = 3;
+long int ack_code = 4;
 long int threshold;
 int msgid;
 struct proc_msg msg;
+
+void send_init() {
+    // Send init data
+    if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
+		fprintf(stderr, "Failed to send init to message queue!\n");
+		exit(EXIT_FAILURE);
+	}
+    printf("Sent init message to controller...\n");
+
+    // Wait for ack signal back
+    while(1) {
+        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), ack_code, 0) == -1) {
+            fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
+            exit(3);
+        }
+        if (msg.pinfo.pid == getpid()) {
+            printf("Received ack signal from controller\n");
+            break;
+        }
+    }
+}
 
 void init_alarm(int data) {
 	printf("[ALARM] Temperature %ld greater than threshold!\n", data);
@@ -31,7 +57,7 @@ void send_data(int data) {
 int main(int argc, char *argv[]) {
 	// Check that correct command line args were passed
 	if (argc != 4) {
-		perror("Temperature sensor takes exactly 3 arguments (Path for Message Queue, Name, Threshold)!");
+		perror("Temperature sensor takes exactly 3 arguments (Path for Message Queue, Name, Threshold)!\n");
 		exit(1);
 	}
 
@@ -43,13 +69,20 @@ int main(int argc, char *argv[]) {
 	strcpy(name, argv[2]);
 	threshold = strtol(argv[3], NULL, 10);
 
+	// Set the message type to init
+	msg.msg_type = init_code;
 
-	msg.msg_type = 1;
 	strcpy(msg.pinfo.name, name);
 	strcpy(msg.pinfo.action, "Start AC");
-	msg.pinfo.device = 0;
+	msg.pinfo.device = TEMP_SENSOR_TYPE;
+    msg.pinfo.data = 0;
 	msg.pinfo.pid = getpid();
 	msg.pinfo.threshold = threshold;
+
+    send_init();    
+
+    // Set the message type to device info
+    msg.msg_type = 1;
 
 	while(1) {
 		// Look for quit message from controller

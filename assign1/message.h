@@ -11,6 +11,8 @@
 
 
 #endif /* MESSAGE_H_ */
+#define TEMP_SENSOR_TYPE 'a'
+#define SMOKE_SENSOR_TYPE 'b'
 
 typedef struct proc_info {
 	pid_t pid;

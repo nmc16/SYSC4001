@@ -19,13 +19,39 @@
 
 int msgid;
 
-struct d_list {
-	proc_info *pinfo;
-	struct d_list *next;
-} device_list;
-
 static int message_sent = 0;
+proc_info device_list[MAX_DEVICES];
+int devices = 0;
 
+void add_to_device_list(struct proc_msg msg) {
+    // Check if the device is registered in the device list yet
+    int i;
+    char flag = 0;
+    for (i = 0; i < devices; i++) {
+        if (device_list[i].pid == msg.pinfo.pid) {
+            flag = 1;
+            break;
+        }
+    }
+
+    // Add to the list if it doesn't already exist
+    if (!flag) {
+        devices++;
+        device_list[devices].device = msg.pinfo.device;
+        device_list[devices].pid = msg.pinfo.pid;
+        device_list[devices].threshold = msg.pinfo.threshold;
+        printf("Device registered PID: %d, Type: %c, Threshold: %ld\n");
+    }
+}
+
+void send_ack(struct proc_msg msg) {
+    msg.msg_type = 4;
+    if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
+		fprintf(stderr, "Acknowledge signal failed to be sent\n");
+	    exit(4);
+	}
+    printf("Sent acknowledge signal for pid %d (Name: %s)!\n", msg.pinfo.pid, msg.pinfo.name);
+}
 void alarm_handler(int signum) {
 	message_sent = 1;
 }
@@ -38,7 +64,7 @@ void activate_actuator(struct proc_msg msg) {
 	msg.msg_type = 0;
 
 	// Send the message over the message queue
-	if (msgsnd(msgid, (void *)&msg, sizeof(msg), 0) == -1) {
+	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "msgsnd failed\n");
 	    exit(4);
 	}
@@ -65,45 +91,43 @@ void send_to_parent(struct proc_msg msg) {
 }
 
 int run_child() {
-	long int msg_to_receive = 1;
-	proc_info *device_list = malloc(sizeof(proc_info) * MAX_DEVICES);
-	int devices = 0;
+	long int device_msg_code = 1;
+    long int device_init_code = 3;
+
 
     struct proc_msg msg;
 
     // Run for ever
     while(1) {
+
+		// Check for the init message on the message queue
+        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), device_init_code, IPC_NOWAIT) == -1) {
+            // Check that it is not an expected error from blank message
+            if (errno != ENOMSG && errno != EAGAIN) {
+    		    fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
+    		    exit(3);
+            }
+    	} else {
+            send_ack(msg);
+            add_to_device_list(msg);
+        }
+
     	// Look for message on the message queue from device
-    	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), msg_to_receive, 0) == -1) {
-    		fprintf(stderr, "msgrcv failed with error: %d\n", errno);
-    		exit(3);
-    	}
-
-    	// Print the info received from the device
-    	printf("Message received from device [%ld] %s (type %c) with data %d (threshold %ld)\n", msg.pinfo.pid,
-    	    	msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold);
-
-    	// Check if the device is registered in the device list yet
-    	int i;
-    	char flag = 0;
-    	for (i = 0; i < devices; i++) {
-    		if (device_list[i].pid == msg.pinfo.pid) {
-    			flag = 1;
-    			break;
-    		}
-    	}
-
-    	// Add to the list if it doesn't already exist
-    	if (!flag) {
-    		devices++;
-    		device_list[devices].device = msg.pinfo.device;
-    		device_list[devices].pid = msg.pinfo.pid;
-    		device_list[devices].threshold = msg.pinfo.threshold;
-    	}
+    	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), device_msg_code, IPC_NOWAIT) == -1) {
+            // Check that it is not an expected error from blank message
+            if (errno != ENOMSG && errno != EAGAIN) {
+    		    fprintf(stderr, "Failed during checking the device messages: %d\n", errno);
+    		    exit(3);
+            }
+    	} else {
+            // Print the info received from the device
+    	    printf("Message received from device [%ld] %s (type %c) with data %d (threshold %ld)\n", msg.pinfo.pid,
+    	    	    msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold);
+        }
 
     	if (msg.pinfo.data > msg.pinfo.threshold) {
-    		activate_actuator(msg);
-    		send_to_parent(msg);
+    		//activate_actuator(msg);
+    		//send_to_parent(msg);
     	}
 
     }
