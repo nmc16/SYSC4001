@@ -78,9 +78,9 @@ int run_child() {
     		fprintf(stderr, "msgrcv failed with error: %d\n", errno);
     		exit(3);
     	}
-    	printf("here\n");
+
     	// Print the info received from the device
-    	printf("Message received from device [%s] %s (type %s) with data %s (threshold %s)\n", msg.pinfo.pid,
+    	printf("Message received from device [%ld] %s (type %c) with data %d (threshold %ld)\n", msg.pinfo.pid,
     	    	msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold);
 
     	// Check if the device is registered in the device list yet
