@@ -17,6 +17,7 @@
 char *name;
 long int init_code = 3;
 long int ack_code = 4;
+long int stop_code = 5;
 long int threshold;
 int msgid;
 struct proc_msg msg;
@@ -35,15 +36,33 @@ void send_init() {
             fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
             exit(3);
         }
+
+        // Make sure its the right process
         if (msg.pinfo.pid == getpid()) {
-            printf("Received ack signal from controller\n");
+            printf("Received acknowledge signal from controller\n");
             break;
         }
     }
 }
 
+int check_for_stop() {
+	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), getpid(), IPC_NOWAIT) == -1) {
+		if (errno != ENOMSG && errno != EAGAIN) {
+			fprintf(stderr, "Failed during checking the stop message: %d\n", errno);
+		    exit(3);
+		}
+		return 0;
+	} else {
+		if (msg.pinfo.data == stop_code) {
+			return 1;
+		} else {
+			return 0;
+		}
+	}
+}
+
 void init_alarm(int data) {
-	printf("[ALARM] Temperature %ld greater than threshold!\n", data);
+	printf("!!! [ALARM] Temperature %ld greater than threshold!\n", data);
 }
 
 void send_data(int data) {
@@ -86,6 +105,10 @@ int main(int argc, char *argv[]) {
 
 	while(1) {
 		// Look for quit message from controller
+		if (check_for_stop()) {
+			printf("Stop signal received, shutting down...\n");
+			break;
+		}
 
 		// Randomize temperature data
 		int r = rand() % (threshold + 10);
