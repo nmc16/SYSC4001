@@ -77,7 +77,8 @@ void send_ack(struct proc_msg msg) {
     printf("Sent acknowledge signal for pid %d (Name: %s)!\n", msg.pinfo.pid, msg.pinfo.name);
 }
 
-static void alarm_handler(int signum) {
+void alarm_handler(int signum) {
+    printf("Alarm handler 4real\n");
 	message_sent = 1;
 }
 
@@ -110,16 +111,13 @@ void send_to_parent(struct proc_msg msg) {
 	    exit(4);
 	}
 
-	// Create alarm and send to parent proc
-	if (sigaction(SIGUSR1, &new_signal, 0) == -1) {
-		 perror("Error: cannot handle SIGHUP"); // Should not happen
-	}
+    kill(getppid(), SIGALRM);
 	printf("Sent alarm to parent\n");
 	return;
 }
 
 int run_child() {
-	long int device_msg_code = 1;
+    long int device_msg_code = 1;
     long int device_init_code = 3;
 
     int test = 0;
@@ -156,7 +154,7 @@ int run_child() {
     	    if (msg.pinfo.data > msg.pinfo.threshold) {
     	    	//activate_actuator(msg);
     	     	send_to_parent(msg);
-    	   	}
+    	    }
         }
 
     	if (test > 10) {
@@ -173,15 +171,23 @@ int run_parent() {
 	long int msg_to_receive = 2;
 	struct proc_msg msg;
 
-	printf("Parent running!\n");
+    // Set up the signal handler
+	struct sigaction new_signal;
+	new_signal.sa_handler = alarm_handler;
+	sigemptyset(&new_signal.sa_mask);
+	new_signal.sa_flags = 0;
+
+	if (sigaction(SIGALRM, &new_signal, NULL) != 0) {
+		 perror("Error: Parent could not handle SIGALRM");
+	}
+
 	while(1) {
-		if (message_sent) {
-			printf("Alarm handler\n");
+		if (message_sent == 1) {
 			if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), msg_to_receive, 0) == -1) {
 				fprintf(stderr, "msgrcv failed with error: %d\n", errno);
 			    exit(3);
 			}
-			printf("Message received from device [%d] %s (type %c) with data %d (threshold %ld) dealt with my action %s\n",
+			printf("[PARENT] Alarm received from device [%d] %s (type %c) with data %d (threshold %ld) dealt with my action %s\n",
 					msg.pinfo.pid, msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold,
 					msg.pinfo.action);
 			message_sent = 0;
