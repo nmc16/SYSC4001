@@ -20,25 +20,12 @@
 int msgid;
 
 static int message_sent = 0;
-long int stop_code = 5;
+static int started = 0;
+static int running = 1;
 proc_info device_list[MAX_DEVICES];
 int devices = 0;
 
-void send_stop(pid_t pid) {
-	struct proc_msg msg;
-
-	msg.msg_type = pid;
-	msg.pinfo.data = stop_code;
-
-	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
-		fprintf(stderr, "Stop signal failed to be sent to PID %d\n", pid);
-		exit(4);
-	}
-
-	// TODO Delete from list
-}
-
-void add_to_device_list(struct proc_msg msg) {
+void add_device(struct proc_msg msg) {
 
     int i;
     char flag = 0;
@@ -53,9 +40,6 @@ void add_to_device_list(struct proc_msg msg) {
 
     // Add to the list if it doesn't already exist
     if (!flag) {
-    	// Increase the devices counter
-        devices++;
-
         // Update the info
         device_list[devices].device = msg.pinfo.device;
         device_list[devices].pid = msg.pinfo.pid;
@@ -65,11 +49,54 @@ void add_to_device_list(struct proc_msg msg) {
         // Alert user that device was registered
         printf("[Device Registered] PID: %d, Type: %c, Threshold: %ld, Name: %s\n", device_list[devices].pid,
         		device_list[devices].device, device_list[devices].threshold, device_list[devices].name);
+
+    	// Increase the devices counter
+        devices++;
     }
 }
 
+void remove_device(pid_t pid) {
+	int i;
+	char flag = 0;
+
+	// Check for the device in the array
+	for (i = 0; i < devices; i++) {
+		if (device_list[i].pid == pid) {
+			flag = 1;
+		    break;
+		}
+	}
+
+	// If the devices exists remove it and shift N-1 to the index of the deleted item
+	if (flag) {
+		// Alert user that device was deleted
+		printf("[Device Stopped] PID: %d, Type: %c, Threshold: %ld, Name: %s\n", device_list[i].pid,
+		        device_list[i].device, device_list[i].threshold, device_list[i].name);
+		device_list[i] = device_list[devices - 1];
+
+		// Decrease counter
+		devices--;
+	}
+}
+
+void send_stop(pid_t pid) {
+	struct proc_msg msg;
+
+	msg.msg_type = pid;
+	msg.pinfo.data = STOPCODE;
+
+	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
+		fprintf(stderr, "Stop signal failed to be sent to PID %d\n", pid);
+		exit(4);
+	}
+
+	// Delete PID from list
+	remove_device(pid);
+}
+
 void send_ack(struct proc_msg msg) {
-    msg.msg_type = 4;
+    msg.msg_type = msg.pinfo.pid;
+    msg.pinfo.data = ACKCODE;
     if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "Acknowledge signal failed to be sent\n");
 	    exit(4);
@@ -78,21 +105,75 @@ void send_ack(struct proc_msg msg) {
 }
 
 void alarm_handler(int signum) {
-    printf("Alarm handler 4real\n");
-	message_sent = 1;
+	// Check the interrupt
+	switch(signum) {
+
+	// Alarm sent from child
+	case SIGALRM:
+		message_sent = 1;
+		break;
+
+	// Control+C was pressed
+	case SIGINT:
+		// If the program hasn't started, start it, otherwise close the child and parent
+		if (started == 0) {
+			started = 1;
+		} else {
+			running = 0;
+		}
+	}
+}
+
+char get_actuator_code(char device) {
+	if (device == TEMP_SENSOR_TYPE) {
+		return AC_ACTUATOR_TYPE;
+	} else if (device == SMOKE_SENSOR_TYPE) {
+		return BELL_ACTUATOR_TYPE;
+	} else {
+		// Some error occurred, non-existent device type was passed
+		return -1;
+	}
 }
 
 void activate_actuator(struct proc_msg msg) {
 	// Set data to start
-	msg.pinfo.data = 1;
+	msg.pinfo.data = 0;
+	msg.msg_type = -1;
 
-	// Set the type to 2 so it is only read actuator
-	msg.msg_type = 0;
+	// Find PID of actuator if it exists otherwise print error
+	char actuator = get_actuator_code(msg.pinfo.device);
+	if (actuator == -1) {
+		printf("Unknown device type, cannot find actuator!\n");
+		exit(5);
+	}
+
+	int i;
+	for (i = 0; i < MAX_DEVICES; i++) {
+		// If we found the one we want, send the message to its PID
+		if (device_list[i].device == actuator) {
+			msg.msg_type = device_list[i].pid;
+		}
+	}
+
+	// Check that a match was found
+	if (msg.msg_type == -1) {
+		printf("No actuator could be found for device %s\n", msg.pinfo.name);
+		return;
+	}
 
 	// Send the message over the message queue
 	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "msgsnd failed\n");
 	    exit(4);
+	}
+
+	// Wait for the acknowledge signal back
+	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), 6, 0) == -1) {
+	    fprintf(stderr, "Failed during checking the ack from actuator: %d\n", errno);
+	    exit(3);
+	} else {
+		printf("[ACTUATOR ACKNOWLEDGE] Actuator %s [%ld] sent acknowledge after performing action \"%s\"\n",
+				msg.pinfo.name, msg.pinfo.pid, msg.pinfo.action);
 	}
 }
 
@@ -104,8 +185,7 @@ void send_to_parent(struct proc_msg msg) {
 	new_signal.sa_flags = 0;
 
 	// Add message to message queue with the action taken
-	msg.msg_type = 2;
-	strcpy(msg.pinfo.action, "Test");
+	msg.msg_type = PRNTCODE;
 	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "msgsnd failed\n");
 	    exit(4);
@@ -116,19 +196,15 @@ void send_to_parent(struct proc_msg msg) {
 	return;
 }
 
-int run_child() {
-    long int device_msg_code = 1;
-    long int device_init_code = 3;
-
-    int test = 0;
-
+void run_child() {
     struct proc_msg msg;
+    int messages = 0;
 
     // Run for ever
-    while(1) {
+    while(running) {
 
 		// Check for the init message on the message queue
-        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), device_init_code, IPC_NOWAIT) == -1) {
+        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), INITCODE, IPC_NOWAIT) == -1) {
             // Check that it is not an expected error from blank message
             if (errno != ENOMSG && errno != EAGAIN) {
     		    fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
@@ -136,11 +212,11 @@ int run_child() {
             }
     	} else {
             send_ack(msg);
-            add_to_device_list(msg);
+            add_device(msg);
         }
 
     	// Look for message on the message queue from device
-    	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), device_msg_code, IPC_NOWAIT) == -1) {
+    	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), DATACODE, IPC_NOWAIT) == -1) {
             // Check that it is not an expected error from blank message
             if (errno != ENOMSG && errno != EAGAIN) {
     		    fprintf(stderr, "Failed during checking the device messages: %d\n", errno);
@@ -150,40 +226,37 @@ int run_child() {
             // Print the info received from the device
     	    printf("Message received from device [%ld] %s (type %c) with data %d (threshold %ld)\n", msg.pinfo.pid,
     	    	    msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold);
-    	    test++;
+    	    messages++;
     	    if (msg.pinfo.data > msg.pinfo.threshold) {
-    	    	//activate_actuator(msg);
+    	    	activate_actuator(msg);
     	     	send_to_parent(msg);
     	    }
         }
 
-    	if (test > 10) {
-    		test = 0;
+    	// If 10 messages are received, send stop to last device to send a message
+    	// Used to show stop code working
+    	if (messages > 10) {
+    		messages = 0;
     		send_stop(msg.pinfo.pid);
     	}
-
     }
 
-	return 0;
+    printf("[CHILD] Child closing...\n");
 }
 
-int run_parent() {
-	long int msg_to_receive = 2;
+void run_parent() {
 	struct proc_msg msg;
 
-    // Set up the signal handler
-	struct sigaction new_signal;
-	new_signal.sa_handler = alarm_handler;
-	sigemptyset(&new_signal.sa_mask);
-	new_signal.sa_flags = 0;
-
-	if (sigaction(SIGALRM, &new_signal, NULL) != 0) {
-		 perror("Error: Parent could not handle SIGALRM");
+	// Wait until Control+C is pressed to start monitoring
+	while(!started) {
+		// Sleep to not keep CPU time
+		sleep(1);
 	}
 
-	while(1) {
+	printf("[PARENT] Parent is now monitoring...\n");
+	while(running) {
 		if (message_sent == 1) {
-			if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), msg_to_receive, 0) == -1) {
+			if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), PRNTCODE, 0) == -1) {
 				fprintf(stderr, "msgrcv failed with error: %d\n", errno);
 			    exit(3);
 			}
@@ -193,6 +266,8 @@ int run_parent() {
 			message_sent = 0;
 		}
 	}
+
+	printf("[PARENT] Parent closing...\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -202,6 +277,20 @@ int main(int argc, char *argv[]) {
 	if (argc != 2) {
 		perror("Controller takes exactly 1 argument!");
 		exit(1);
+	}
+
+	// Set up the signal handler
+	struct sigaction new_signal;
+	new_signal.sa_handler = alarm_handler;
+	sigemptyset(&new_signal.sa_mask);
+	new_signal.sa_flags = 0;
+
+	// Add the handler to handle SIGALRM and SIGINT
+	if (sigaction(SIGALRM, &new_signal, NULL) != 0) {
+		 perror("Error: Could not handle SIGALRM");
+	}
+	if (sigaction(SIGINT, &new_signal, NULL) != 0) {
+		perror("Error: Could not handle SIGINT");
 	}
 
 	// Create the message queue if it doesn't already exist
@@ -226,8 +315,14 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (msgctl(msgid, IPC_RMID, 0) == -1) {
-	    fprintf(stderr, "msgctl(IPC_RMID) failed\n");
-	    exit(EXIT_FAILURE);
+		// If the message queue has already been deleted it will throw EINVAL
+		if (errno != EINVAL) {
+			fprintf(stderr, "Could not delete message queue!: %d\n", errno);
+	    	exit(EXIT_FAILURE);
+		}
+	} else {
+		printf("Closed message queue...\n");
 	}
+
 	exit(0);
 }

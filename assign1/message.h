@@ -11,8 +11,20 @@
 
 
 #endif /* MESSAGE_H_ */
+
+// Define character constants for device type
 #define TEMP_SENSOR_TYPE 'a'
-#define SMOKE_SENSOR_TYPE 'a'
+#define SMOKE_SENSOR_TYPE 'b'
+#define AC_ACTUATOR_TYPE 'c'
+#define BELL_ACTUATOR_TYPE 'd'
+
+// Define int constants for message type
+#define INITCODE 1000
+#define DATACODE 1001
+#define STOPCODE 1002
+#define ACKCODE 1003
+#define PRNTCODE 1004
+
 
 typedef struct proc_info {
 	pid_t pid;

@@ -15,9 +15,6 @@
 #include "message.h"
 
 char *name;
-long int init_code = 3;
-long int ack_code = 4;
-long int stop_code = 5;
 long int threshold;
 int msgid;
 struct proc_msg msg;
@@ -32,13 +29,13 @@ void send_init() {
 
     // Wait for ack signal back
     while(1) {
-        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), ack_code, 0) == -1) {
+        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), getpid(), 0) == -1) {
             fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
             exit(3);
         }
 
         // Make sure its the right process
-        if (msg.pinfo.pid == getpid()) {
+        if (msg.pinfo.data == ACKCODE) {
             printf("Received acknowledge signal from controller\n");
             break;
         }
@@ -53,7 +50,7 @@ int check_for_stop() {
 		}
 		return 0;
 	} else {
-		if (msg.pinfo.data == stop_code) {
+		if (msg.pinfo.data == STOPCODE) {
 			return 1;
 		} else {
 			return 0;
@@ -89,7 +86,7 @@ int main(int argc, char *argv[]) {
 	threshold = strtol(argv[3], NULL, 10);
 
 	// Set the message type to init
-	msg.msg_type = init_code;
+	msg.msg_type = INITCODE;
 
 	strcpy(msg.pinfo.name, name);
 	strcpy(msg.pinfo.action, "Start AC");
@@ -101,8 +98,9 @@ int main(int argc, char *argv[]) {
     send_init();    
 
     // Set the message type to device info
-    msg.msg_type = 1;
+    msg.msg_type = DATACODE;
 
+    int range = threshold + 20;
 	while(1) {
 		// Look for quit message from controller
 		if (check_for_stop()) {
@@ -111,7 +109,7 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Randomize temperature data
-		int r = rand() % (threshold + 10);
+		int r = rand() % range;
 		printf("Temperature sensor %s reads temperature %ld (Threshold: %ld)\n", msg.pinfo.name, r, msg.pinfo.threshold);
 
 		// Send the data over the message queue
