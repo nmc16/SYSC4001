@@ -17,7 +17,9 @@
 #define MQGERR 2	// Error during creation/connecting to the message queue
 #define MQRERR 3	// Error during message receive
 #define MQSERR 4	// Error during message sending
-
+#define FICRERR 5	// Error during FIFO creation
+#define FIOPERR 6	// Error during FIFO opening
+#define FIWRERR 7	// Error during FIFO write
 
 
 #endif /* ERROR_TYPES_H_ */

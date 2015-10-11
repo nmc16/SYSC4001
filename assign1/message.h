@@ -33,6 +33,9 @@
 #define PRNTCODE 1004
 #define QUITCODE 1005
 
+// Define FIFO constants
+#define SERVER_FIFO_NAME "/tmp/serv_fifo"
+#define CLIENT_FIFO_NAME "/tmp/cli_%d_fifo"
 
 typedef struct proc_info {
 	pid_t pid;

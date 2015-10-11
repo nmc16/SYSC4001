@@ -10,10 +10,15 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/msg.h>
-#include "message.h"
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <sys/stat.h>
+
+#include "message.h"
+#include "error_types.h"
 
 #define MAX_DEVICES 6
 
@@ -186,12 +191,6 @@ void activate_actuator(struct proc_msg msg) {
 }
 
 void send_to_parent(struct proc_msg msg) {
-	// Set up the signal to send
-	struct sigaction new_signal;
-	new_signal.sa_handler = alarm_handler;
-	sigemptyset(&new_signal.sa_mask);
-	new_signal.sa_flags = 0;
-
 	// Add message to message queue with the action taken
 	msg.msg_type = PRNTCODE;
 	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
@@ -265,6 +264,7 @@ void run_child() {
 }
 
 void run_parent() {
+	int server_fifo_id;
 	struct proc_msg msg;
 
 	// Wait until Control+C is pressed to start monitoring
@@ -273,21 +273,44 @@ void run_parent() {
 		sleep(1);
 	}
 
+	// Open the server FIFO in read only mode
+	server_fifo_id = open(SERVER_FIFO_NAME, O_WRONLY);
+	if (server_fifo_id == -1) {
+		// If there was an interrupt let the handler deal with it
+		if (errno != EINTR) {
+			fprintf(stderr, "[ERROR] Parent could not open server FIFO: %d\n", errno);
+	    	exit(FIOPERR);
+		}
+	}
+
+
 	printf("[PARENT] Parent is now monitoring...\n");
 	while(running) {
+		// If the alarm has been received read the message from the queue
 		if (message_sent == 1) {
 			if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), PRNTCODE, 0) == -1) {
 				fprintf(stderr, "msgrcv failed with error: %d\n", errno);
 			    exit(3);
 			}
-			printf("[PARENT] Alarm received from device [%d] %s (type %c) with data %d (threshold %ld) dealt with my action %s\n",
+
+			// Print the data
+			printf("[PARENT] Alarm received from device [%d] %s (type %c) with data %d (threshold %ld) dealt with by action \"%s\"\n",
 					msg.pinfo.pid, msg.pinfo.name, msg.pinfo.device, msg.pinfo.data, msg.pinfo.threshold,
 					msg.pinfo.action);
+
+			// Send the data to the cloud
+			if(write(server_fifo_id, &msg.pinfo, sizeof(msg.pinfo)) != 0) {
+				if (errno != EINTR) {
+					fprintf(stderr, "[ERROR] Parent could not write to server FIFO: %d\n", errno);
+					running = 0;
+				}
+			}
 			message_sent = 0;
 		}
 	}
 
 	printf("[PARENT] Parent closing...\n");
+	close(server_fifo_id);
 }
 
 int main(int argc, char *argv[]) {
@@ -303,7 +326,7 @@ int main(int argc, char *argv[]) {
 	struct sigaction new_signal;
 	new_signal.sa_handler = alarm_handler;
 	sigemptyset(&new_signal.sa_mask);
-	new_signal.sa_flags = 0;
+	new_signal.sa_flags = SA_RESTART;
 
 	// Add the handler to handle SIGALRM and SIGINT
 	if (sigaction(SIGALRM, &new_signal, NULL) != 0) {
