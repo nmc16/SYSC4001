@@ -1,8 +1,15 @@
 /*
  * message.h
  *
+ * Holds constant message variables like the type of the sensor
+ * and the message type that is sent in either the data or the
+ * message type.
+ *
+ * Also holds the structure for the message to send on the
+ * message queue for all devices and controllers.
+ *
  *  Created on: Oct 3, 2015
- *      Author: nic
+ *      Author: Nicolas McCallum 100936816
  */
 
 #ifndef MESSAGE_H_
@@ -24,6 +31,7 @@
 #define STOPCODE 1002
 #define ACKCODE 1003
 #define PRNTCODE 1004
+#define QUITCODE 1005
 
 
 typedef struct proc_info {

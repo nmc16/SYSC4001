@@ -77,6 +77,7 @@ void remove_device(pid_t pid) {
 		// Decrease counter
 		devices--;
 	}
+	printf("asda\n");
 }
 
 void send_stop(pid_t pid) {
@@ -161,6 +162,13 @@ void activate_actuator(struct proc_msg msg) {
 		return;
 	}
 
+	// Send the appropriate action to the actuator
+	if (actuator == AC_ACTUATOR_TYPE) {
+		strcpy(msg.pinfo.action, "start ac");
+	} else {
+		strcpy(msg.pinfo.action, "ring smoke alarm");
+	}
+
 	// Send the message over the message queue
 	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "msgsnd failed\n");
@@ -213,6 +221,18 @@ void run_child() {
     	} else {
             send_ack(msg);
             add_device(msg);
+        }
+
+        // Check if there has been a message from a device that quit
+        if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), QUITCODE, IPC_NOWAIT) == -1) {
+        	// Check that it is not an expected error from blank message
+        	if (errno != ENOMSG && errno != EAGAIN) {
+        	    fprintf(stderr, "Failed during checking the init messages: %d\n", errno);
+        	    exit(3);
+        	}
+        } else {
+        	// Remove the device from the registered devices list
+        	remove_device(msg.pinfo.pid);
         }
 
     	// Look for message on the message queue from device
