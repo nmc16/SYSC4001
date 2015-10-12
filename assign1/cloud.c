@@ -10,21 +10,16 @@
  */
 
 #include <sys/stat.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <fcntl.h>
-#include <errno.h>
-#include <signal.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <string.h>
 #include <limits.h>
-#include <sys/types.h>
 #include "message.h"
-#include "error_types.h"
 
 char running = 1;
 
+/**
+ * Signal handler that checks for the interrupt signal and stops the
+ * program gracefully if entered.
+ */
 void signal_handler(int signum) {
 	// Check if Control+C was pressed
 	if (signum == SIGINT) {
@@ -34,7 +29,7 @@ void signal_handler(int signum) {
 }
 
 int main(int argc, char *argv[]) {
-	int server_fifo_id, client_fifo_id;
+	int server_fifo_id;
 	struct proc_info pinfo;
 
 	// Set up the signal handler
@@ -69,7 +64,7 @@ int main(int argc, char *argv[]) {
 
 	while(running) {
 		if (read(server_fifo_id, &pinfo, sizeof(pinfo)) > 0) {
-			printf("[DATA] Controller send data from PID %ld (%s), device type %c, "
+			printf("[DATA] Controller send data from PID %d (%s), device type %c, "
 					"with data %d and threshold %ld\n", pinfo.pid, pinfo.name, pinfo.device, pinfo.data,
 					pinfo.threshold);
 		}

@@ -18,22 +18,21 @@
  *      Author: Nicolas McCallum 100936816
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 #include <sys/msg.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <errno.h>
 #include "message.h"
-#include "error_types.h"
 
 char *name;
 char type;
 long int threshold;
 int msgid;
 struct proc_msg msg;
+int running = 1;
 
+/**
+ * Sends initialization message to controller via message queue. Waits until
+ * the controller sends back and acknowledge signal that the device was
+ * registered.
+ */
 void send_init() {
 	// Set the message type to init
 	msg.msg_type = INITCODE;
@@ -60,6 +59,11 @@ void send_init() {
     }
 }
 
+/**
+ * Checks for the stop message sent via message queue from the controller.
+ *
+ * return: 1 if the stop message exists and 0 if it doesn't
+ */
 int check_for_stop() {
 	if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), getpid(), IPC_NOWAIT) == -1) {
 		if (errno != ENOMSG && errno != EAGAIN) {
@@ -76,18 +80,34 @@ int check_for_stop() {
 	}
 }
 
+/**
+ * Method to print the alarm statement to the console.
+ */
 void init_alarm(int data) {
-	printf("[ALARM] Temperature %ld greater than threshold!\n", data);
+	printf("[ALARM] Temperature %d greater than threshold!\n", data);
 }
 
+/**
+ * Sends the data to the controller via the message queue.
+ */
 void send_data(int data) {
+	// Set the message type to device info
+	msg.msg_type = DATACODE;
 	msg.pinfo.data = data;
+
 	if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "[ERROR] Failed to send data to message queue!\n");
 		exit(MQSERR);
 	}
 }
 
+/**
+ * Sets the type for the actuator given the input from console.
+ *
+ * Must be either 'ac' for ac controller or 'bell' for smoke detector.
+ *
+ * param input: input string from console.
+ */
 void set_type(char *input) {
 	if (strcmp(input, "temperature") == 0 || strcmp(input, "temp") == 0) {
 		type = TEMP_SENSOR_TYPE;
@@ -101,10 +121,35 @@ void set_type(char *input) {
 	}
 }
 
+/**
+ * Signal handler that checks for interrupt signal. Upon interrupt signal, message
+ * is sent to controller to delete the device from the device list and stops the
+ * program.
+ */
+void signal_handler(int signum) {
+	// Check the interrupt
+	switch(signum) {
+
+	// Control+C was pressed
+	case SIGINT:
+		// End the program loop
+		running = 0;
+
+		// Send quit message to the controller
+		msg.msg_type = QUITCODE;
+		msg.pinfo.pid = getpid();
+		if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
+			fprintf(stderr, "[ERROR] Quit signal failed to be sent\n");
+			exit(MQSERR);
+		}
+	}
+}
+
 int main(int argc, char *argv[]) {
 	// Check that correct command line args were passed
 	if (argc != 5) {
-		perror("[ERROR] Sensor takes exactly 4 arguments (Path for Message Queue, Sensor type, Name, Threshold)!\n");
+		perror("[ERROR] Sensor takes exactly 4 arguments (Path for Message Queue, "
+				"Sensor type, Name, Threshold)!\n");
 		exit(INITERR);
 	}
 
@@ -113,6 +158,16 @@ int main(int argc, char *argv[]) {
 	strcpy(name, argv[3]);
 	threshold = strtol(argv[4], NULL, 10);
 	set_type(argv[2]);
+
+	// Set up the signal handler
+	struct sigaction new_signal;
+	new_signal.sa_handler = signal_handler;
+	sigemptyset(&new_signal.sa_mask);
+	new_signal.sa_flags = 0;
+	if (sigaction(SIGINT, &new_signal, NULL) != 0) {
+		fprintf(stderr, "[Error] Could not handle SIGINT");
+		exit(INITERR);
+	}
 
 	// Connect to message queue given the path
 	msgid = msgget(ftok(argv[1], 1), 0666 | IPC_CREAT);
@@ -132,11 +187,8 @@ int main(int argc, char *argv[]) {
 	// Send the init and wait for ack signal
     send_init();    
 
-    // Set the message type to device info
-    msg.msg_type = DATACODE;
-
     int range = threshold + 20;
-	while(1) {
+	while(running) {
 		// Look for quit message from controller
 		if (check_for_stop()) {
 			printf("[STOPPING] Stop signal received, shutting down...\n");
@@ -148,9 +200,11 @@ int main(int argc, char *argv[]) {
 
 		// Print the data to the screen for the sensor type
 		if (type == TEMP_SENSOR_TYPE) {
-		    printf("[DATA] Temperature sensor %s reads temperature %ld (Threshold: %ld)\n", name, r, threshold);
+		    printf("[DATA] Temperature sensor %s reads temperature %d (Threshold: %ld)\n",
+		    		name, r, threshold);
 		} else {
-		    printf("[DATA] Smoke sensor %s reads smoke level %ld (Threshold: %ld)\n", name, r, threshold);
+		    printf("[DATA] Smoke sensor %s reads smoke level %d (Threshold: %ld)\n",
+		    		name, r, threshold);
 		}
 		// Send the data over the message queue
 		send_data(r);

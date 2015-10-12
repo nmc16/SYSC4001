@@ -19,16 +19,8 @@
  *      Author: Nicolas McCallum 100936816
  */
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 #include <sys/msg.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <signal.h>
 #include "message.h"
-#include "error_types.h"
 
 int msgid;
 char running = 1;
@@ -36,6 +28,11 @@ char *name;
 char type;
 struct proc_msg msg;
 
+/**
+ * Sends initialization message to controller via message queue. Waits until
+ * the controller sends back and acknowledge signal that the device was
+ * registered.
+ */
 void send_init() {
 	// Set the message type to init
 	msg.msg_type = INITCODE;
@@ -45,7 +42,7 @@ void send_init() {
 		fprintf(stderr, "Failed to send init to message queue!\n");
 		exit(EXIT_FAILURE);
 	}
-    printf("Sent init message to controller...\n");
+    printf("[INIT] Sent init message to controller...\n");
 
     // Wait for ack signal back
     while(1) {
@@ -56,34 +53,49 @@ void send_init() {
 
         // Make sure its the right process
         if (msg.pinfo.data == ACKCODE) {
-            printf("Received acknowledge signal from controller\n");
+            printf("[INIT] Received acknowledge signal from controller\n");
             break;
         }
     }
 }
 
+/**
+ * Sends acknowledge signal back to controller via message queue that
+ * the action was performed.
+ */
 void send_ack() {
-    msg.msg_type = 6;
+	// Set the type to acknowledge and send to controller
+    msg.msg_type = AACKCODE;
     strcpy(msg.pinfo.name, name);
-    strcpy(msg.pinfo.action, "Started AC");
+
     if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
 		fprintf(stderr, "Acknowledge signal failed to be sent\n");
 	    exit(4);
 	}
-    printf("Sent acknowledge signal to controller!\n");
+    printf("[ACTION] Sent acknowledge signal to controller!\n");
 }
 
+/**
+ * Sets the type for the actuator given the input from console.
+ *
+ * Must be either 'ac' for ac controller or 'bell' for smoke detector.
+ *
+ * param input: input string from console.
+ */
 void set_type(char *input) {
 	if (strcmp(input, "ac") == 0) {
 		type = AC_ACTUATOR_TYPE;
 	} else if (strcmp(input, "bell") == 0) {
 		type = BELL_ACTUATOR_TYPE;
 	} else {
-		perror("[ERROR] Invalid actuator type entered. Must be one of: ac, bell!\n");
+		fprintf(stderr, "[ERROR] Invalid actuator type entered. Must be one of: ac, bell!\n");
 		exit(INITERR);
 	}
 }
 
+/**
+ * Signal handler for interupt signal sent from command line.
+ */
 void signal_handler(int signum) {
 	// Check the interrupt
 	switch(signum) {
@@ -97,8 +109,8 @@ void signal_handler(int signum) {
 		msg.msg_type = QUITCODE;
 		msg.pinfo.pid = getpid();
 		if (msgsnd(msgid, (void *)&msg, sizeof(msg.pinfo), 0) == -1) {
-			fprintf(stderr, "Quit signal failed to be sent\n");
-			exit(4);
+			fprintf(stderr, "[ERROR] Quit signal failed to be sent\n");
+			exit(MQSERR);
 		}
 	}
 }
@@ -106,7 +118,7 @@ void signal_handler(int signum) {
 int main(int argc, char *argv[]) {
 	// Check that correct command line args were passed
 	if (argc != 4) {
-		fprintf(stderr, "[ERROR] Temperature sensor takes exactly 3 arguments "
+		fprintf(stderr, "[ERROR] Actuator takes exactly 3 arguments "
 			            "(Path for Message Queue, Actuator Type, Name)!\n");
 		exit(INITERR);
 	}
@@ -122,7 +134,7 @@ int main(int argc, char *argv[]) {
 	sigemptyset(&new_signal.sa_mask);
 	new_signal.sa_flags = 0;
 	if (sigaction(SIGINT, &new_signal, NULL) != 0) {
-		perror("Error: Could not handle SIGINT");
+		fprintf(stderr, "[Error] Could not handle SIGINT\n");
 		exit(INITERR);
 	}
 
@@ -150,15 +162,16 @@ int main(int argc, char *argv[]) {
 	while(running) {
 		// Look for quit message from controller
 		if (msgrcv(msgid, (void *)&msg, sizeof(msg.pinfo), getpid(), 0) == -1) {
-			fprintf(stderr, "Failed during checking the stop message: %d\n", errno);
-			exit(3);
+			fprintf(stderr, "[ERROR] Failed during checking the stop message: %d\n", errno);
+			exit(MQRERR);
 		}
 
 		if (msg.pinfo.data == STOPCODE) {
-			printf("Stop signal received, shutting down...\n");
+			printf("[STOPPING] Stop signal received, shutting down...\n");
 			break;
 		} else {
-			printf("Triggered action \"%s\" caused by PID %d (%s)\n", msg.pinfo.action, msg.pinfo.pid, msg.pinfo.name);
+			printf("[ACTION] Triggered action \"%s\" caused by PID %d (%s)\n",
+					msg.pinfo.action, msg.pinfo.pid, msg.pinfo.name);
 			send_ack();
 		}
 	}
