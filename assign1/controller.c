@@ -22,8 +22,8 @@
 #include <sys/stat.h>
 #include "message.h"
 
-// Define max registered devices at one time to be 6
-#define MAX_DEVICES 6
+// Define max registered devices at one time to be 15
+#define MAX_DEVICES 15
 
 static int message_sent = 0;
 static int started = 0;
