@@ -9,6 +9,10 @@ The project consists of 4 files: controller.c, cloud.c, sensor.c, actuator.c.
 
 Each file can be closed gracefully using Control + C on the command line.
 
+The controller sends a stop message to the latest sensor to send a message
+ after ten messages have been received. This is to show the stop message
+ works.
+
 The project can be built running 'make' using the Makefile in the directory:
 
     ie:
