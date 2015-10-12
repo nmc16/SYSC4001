@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
 
 	while(running) {
 		if (read(server_fifo_id, &pinfo, sizeof(pinfo)) > 0) {
-			printf("[DATA] Controller send data from PID %d (%s), device type %c, "
+			printf("[DATA] Controller sent data from PID %d (%s), device type %c, "
 					"with data %d and threshold %ld\n", pinfo.pid, pinfo.name, pinfo.device, pinfo.data,
 					pinfo.threshold);
 		}
