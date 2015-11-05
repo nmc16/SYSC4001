@@ -9,5 +9,6 @@
 #define SHM_HELPER_H_
 
 #define SHMKEY 1000
+#include <sys/shm.h>
 
 #endif /* SHM_HELPER_H_ */

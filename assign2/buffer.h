@@ -11,8 +11,8 @@
 #define TXTBUFSIZ 128
 
 struct text_buf {
-	char buffer[TXTBUFSIZ];
 	int count;
+	char buffer[TXTBUFSIZ];
 };
 
 #endif /* BUFFER_H_ */
