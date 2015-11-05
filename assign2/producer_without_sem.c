@@ -1,15 +1,11 @@
 /*
- * producer.c
+ * producer_without_sem.c
  *
- *  Producer that takes in the file using redirection and reads the
- *  data into a buffer of size BUFSIZ. Splits the buffer into
- *  shared memory structs with a buffer size of 128 that form
- *  the circular buffer.
+ *	Copy of producer.c without the semaphore S to show that
+ *	if only using one producer and one consumer semaphore S
+ *	isn't needed.
  *
- *  Continues to read from the file until the EOF is reached which
- *  is indicated by a 0 from the return of read().
- *
- *  Created on: November 4, 2015
+ *  Created on: November 5, 2015
  *      Author: Nicolas McCallum 100936816
  */
 
@@ -107,7 +103,7 @@ int main(void) {
 	void *shared_memory = (void *)0;
 
 	// Declare integers for the semaphores S, N, and E and the shared memory of the buffers
-	int semsid, semnid, semeid, shmid;
+	int semnid, semeid, shmid;
 	int produced;
 
 	// Set up the signal handler
@@ -130,18 +126,17 @@ int main(void) {
 	}
 
 	// Get the IDs for the semaphores needed for mutex
-	semsid = semget((key_t)SEMSKEY, 1, 0666 | IPC_CREAT);
 	semnid = semget((key_t)SEMNKEY, 1, 0666 | IPC_CREAT);
 	semeid = semget((key_t)SEMEKEY, 1, 0666 | IPC_CREAT);
 
 	// Check that all the semaphores were successfully received
-	if (semsid == -1 || semnid == -1 || semeid == -1) {
+	if (semnid == -1 || semeid == -1) {
 		fprintf(stderr, "Could not get one or more of the semaphores! Error Code: %d\n", errno);
 		exit(EXIT_FAILURE);
 	}
 
 	// Initialize the semaphores to their initial values
-	if (!init_sem(semsid, 1) || !init_sem(semnid, 0) || !init_sem(semeid, NBUFFERS)) {
+	if (!init_sem(semnid, 0) || !init_sem(semeid, NBUFFERS)) {
 		exit(EXIT_FAILURE);
 	}
 
@@ -169,14 +164,8 @@ int main(void) {
 			// Wait until there is empty space on the buffers
 			sem_wait(semeid);
 
-			// Wait until the consumer has left the critical section
-			sem_wait(semsid);
-
 			// Add the items
 			append(tb[i]);
-
-			// Release the semaphore for CS
-			sem_signal(semsid);
 
 			// Signal that an item has been added to the buffer
 			sem_signal(semnid);
@@ -194,7 +183,7 @@ int main(void) {
 	}
 
 	// Delete the semaphores
-	if (!del_sem(semsid) || !del_sem(semnid) || !del_sem(semeid)) {
+	if (!del_sem(semnid) || !del_sem(semeid)) {
 		fprintf(stderr, "Error deleting one or more semaphore(s)! Error Code: %d\n", errno);
 		exit(EXIT_FAILURE);
 	}

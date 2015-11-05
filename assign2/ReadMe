@@ -5,4 +5,34 @@
 #    SYSC 4001 Assignment 2                         #
 #####################################################
 
-The project consists of 2 files: 
+The project consists of 2 files main files: producer and consumer.
+  Also contains two files: producer_without_sem and consumer_without_sem that 
+  are copies of the above two files without Semaphore S to show that it is
+  not needed for one consumer and one producer.
+  
+The text file text.txt was used for testing.
+  
+The project can be built running 'make' using the Makefule in the directory:
+
+    ie:
+        $cd assign2/
+        $make
+     
+Consumer:
+    Consumer is the first program that should be run. It will consume the buffers
+    produced by the producer into a file using redirection. Otherwise all the 
+    text will be printed to stdout. The consumer can be closed gracefully using
+    Control+C. To run it so the output goes to a file:
+    
+        $./consumer > output.txt
+        
+Producer:
+    Producer produces the text to shared memory given an input file through
+    redirection. The producer can be closed gracefully using Control+C.
+    Running the producer:
+        
+        $./producer < input.txt
+
+Producer and Consumer without Semaphore S:
+    These files should only be run with one consumer then one producer using the same
+    method as above.

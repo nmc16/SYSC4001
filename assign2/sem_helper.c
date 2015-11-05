@@ -1,8 +1,14 @@
 /*
  * sem_helper.c
  *
- *  Created on: Nov 4, 2015
- *      Author: nic
+ * 	Holds shared methods for semaphore operations that both the consumer and
+ * 	producer use.
+ *
+ * 	Can initialize a semaphore to a value, delete a semaphore, and perform
+ * 	the wait() and signal() methods.
+ *
+ *  Created on: November 4, 2015
+ *      Author: Nicolas McCallum 100936816
  */
 #include <errno.h>
 #include "sem_helper.h"
@@ -10,7 +16,7 @@
 int init_sem(int semid, int value) {
     union semun sem_union;
 
-    sem_union.val = 1;
+    sem_union.val = value;
     if (semctl(semid, 0, SETVAL, sem_union) == -1) {
     	fprintf(stderr, "Semaphore (%d) could not be initialized! Error Code: %d\n", semid, errno);
     	return 0;

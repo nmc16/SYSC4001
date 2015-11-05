@@ -1,8 +1,11 @@
 /*
  * shm_helper.h
  *
- *  Created on: Nov 4, 2015
- *      Author: nic
+ *	Header file for the shared memory constants. Holds the constant
+ *	for the shared memory key.
+ *
+ *  Created on: November 4, 2015
+ *      Author: Nicolas McCallum 100936816
  */
 
 #ifndef SHM_HELPER_H_
