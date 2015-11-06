@@ -114,13 +114,17 @@ int main(void) {
 
 	while(running) {
 		// Wait until there is something to read on shared memory buffer
-		sem_wait(semnid);
+		if (!sem_wait(semnid)) {
+			exit(EXIT_FAILURE);
+		}
 
 		// Take the message from the buffer
 		tb = take();
 
 		// Signal new space available on buffer
-		sem_signal(semeid);
+		if (!sem_signal(semeid)) {
+			exit(EXIT_FAILURE);
+		}
 
 		// Write the text to the file
 		write_to_file(tb);

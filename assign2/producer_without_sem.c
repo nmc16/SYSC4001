@@ -162,13 +162,17 @@ int main(void) {
 		int i;
 		for(i = 0; i < produced; i++) {
 			// Wait until there is empty space on the buffers
-			sem_wait(semeid);
+			if(!sem_wait(semeid)) {
+				exit(EXIT_FAILURE);
+			}
 
 			// Add the items
 			append(tb[i]);
 
 			// Signal that an item has been added to the buffer
-			sem_signal(semnid);
+			if(!sem_signal(semnid)) {
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 

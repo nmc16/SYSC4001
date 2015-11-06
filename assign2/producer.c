@@ -167,19 +167,27 @@ int main(void) {
 		int i;
 		for(i = 0; i < produced; i++) {
 			// Wait until there is empty space on the buffers
-			sem_wait(semeid);
+			if(!sem_wait(semeid)) {
+				exit(EXIT_FAILURE);
+			}
 
 			// Wait until the consumer has left the critical section
-			sem_wait(semsid);
+			if(!sem_wait(semsid)) {
+				exit(EXIT_FAILURE);
+			}
 
 			// Add the items
 			append(tb[i]);
 
 			// Release the semaphore for CS
-			sem_signal(semsid);
+			if (!sem_signal(semsid)) {
+				exit(EXIT_FAILURE);
+			}
 
 			// Signal that an item has been added to the buffer
-			sem_signal(semnid);
+			if(!sem_signal(semnid)) {
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
