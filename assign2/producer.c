@@ -20,6 +20,8 @@
 int running = 1;
 int bytes_read = 0;
 int in = 0;
+void *shm_in = (void *)0;
+int *shared_in;
 struct text_buf *shared_stuff;
 
 /**
@@ -97,9 +99,11 @@ int produce(struct text_buf tb[100]) {
  * param tb: text_buf struct to add to shared memory
  */
 void append(struct text_buf tb) {
+    in = *shared_in;
 	shared_stuff[in].count = tb.count;
 	strncpy(shared_stuff[in].buffer, tb.buffer, tb.count);
 	in = (in + 1) % NBUFFERS;
+    *shared_in = in;
 }
 
 int main(void) {
@@ -107,7 +111,7 @@ int main(void) {
 	void *shared_memory = (void *)0;
 
 	// Declare integers for the semaphores S, N, and E and the shared memory of the buffers
-	int semsid, semnid, semeid, shmid;
+	int semsid, semnid, semeid, shmid, shminid;
 	int produced;
 
 	// Set up the signal handler
@@ -125,6 +129,12 @@ int main(void) {
 	// Get the shared memory ID and create it to be of size 100 buffers if not already
 	shmid = shmget((key_t)SHMKEY, sizeof(struct text_buf) * NBUFFERS, 0666 | IPC_CREAT);
 	if (shmid == -1) {
+	    fprintf(stderr, "Could not get shared memory id! Error Code: %d\n", errno);
+	    exit(EXIT_FAILURE);
+	}
+
+    shminid = shmget((key_t)SHMINID, sizeof(int), 0666 | IPC_CREAT);
+	if (shminid == -1) {
 	    fprintf(stderr, "Could not get shared memory id! Error Code: %d\n", errno);
 	    exit(EXIT_FAILURE);
 	}
@@ -152,8 +162,15 @@ int main(void) {
 	    exit(EXIT_FAILURE);
 	}
 
+    shm_in = shmat(shminid, (void *)0, 0);
+	if (shm_in == (void *)-1) {
+	    fprintf(stderr, "Could not map shared memory! Error Code: %d\n", errno);
+	    exit(EXIT_FAILURE);
+	}
+
 	printf("Memory attached at %X\n", (int)shared_memory);
 	shared_stuff = (struct text_buf *)shared_memory;
+    shared_in = (int *)shm_in;
 
 	while(running) {
 		// Produce a new message to put on the buffer
@@ -197,6 +214,15 @@ int main(void) {
 	    exit(EXIT_FAILURE);
 	}
 	if (shmctl(shmid, IPC_RMID, 0) == -1) {
+	    fprintf(stderr, "Error deleting the shared memory! Error Code: %d\n", errno);
+	    exit(EXIT_FAILURE);
+	}
+
+    if (shmdt(shm_in) == -1) {
+	    fprintf(stderr, "Error could not detach from shared memory! Error Code: %d\n", errno);
+	    exit(EXIT_FAILURE);
+	}
+	if (shmctl(shminid, IPC_RMID, 0) == -1) {
 	    fprintf(stderr, "Error deleting the shared memory! Error Code: %d\n", errno);
 	    exit(EXIT_FAILURE);
 	}

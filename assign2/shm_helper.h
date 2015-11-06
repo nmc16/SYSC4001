@@ -12,6 +12,7 @@
 #define SHM_HELPER_H_
 
 #define SHMKEY 1000
+#define SHMINID 1001
 #include <sys/shm.h>
 
 #endif /* SHM_HELPER_H_ */
