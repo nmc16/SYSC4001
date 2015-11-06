@@ -109,7 +109,6 @@ int main(void) {
 	    exit(EXIT_FAILURE);
 	}
 
-	printf("Memory attached at %X\n", (int)shared_memory);
 	shared_stuff = (struct text_buf *)shared_memory;
 
 	while(running) {
