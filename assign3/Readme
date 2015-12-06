@@ -1,0 +1,52 @@
+#####################################################
+#    Author: Nicolas McCallum #100936816            #
+#    Date: December 6th, 2015                       #
+#    Version: 1                                     #
+#    SYSC 4001 Assignment 3                         #
+#####################################################
+
+The project consists of 2 files: main.c and proc.h
+ The project spawns one producer thread that will produce 20 randomly generated
+ processes and places them into one of 3 resource queues on one of the 4 
+ consumers.
+ 
+ Each process can be FIFO which executes without blocking, RR which will
+ execute until the time slice ends, or NORMAL which can be blocked or run until
+ the end of the time slice.
+ 
+ The consumer emulates the run time of the process and prints to stdout the
+ results of each execution.
+
+ The execution results can flood stdout so it might be useful to redirect
+ output to a log file so no contents are lost:
+    
+    ie:
+        ./main > log
+
+The project can be built running 'make' using the Makefile in the directory:
+
+    ie:
+        $cd assign3/
+        $make
+     
+Main:
+    Consists of 3 parts that each run in their own threads: producer, consumer,
+     and the balancer. Can be run using:
+
+        ./main
+
+    Producer:
+        Creates random process and sets the execution time from 100ms to 500ms.
+         and calculates the priority and time slice. Adds the process to a 
+         consumer run queue, 0 for RR or FIFO and 1 for NORMAL schedule types.
+
+    Consumer:
+        Consumer thread function that selects the highest priority process from
+         one of the run queues. Run queue 0 is highest priority, followed by run
+         queue 1, then run queue 2 being the lowest priority. Emulates the run
+         of the process and prints the results to stdout. Exits once there
+         are no more processes being created and no more exist in the run queues.
+
+    Balancer:
+        Balances the run queues of each process so that there are an even
+        number of processes in each run queue.
