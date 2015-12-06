@@ -31,6 +31,8 @@ void *consumer(void *arg);
 proc_struct *find_and_remove_min_prio(proc_struct rq[QUEUE_SIZE], int count);
 void *balance();
 void *emulate_run(proc_struct proc, int thread_num, int rq);
+int *find_max(int a, int b, int c);
+int *find_min(int a, int b, int c);
 
 
 // Circular buffers for consumers
@@ -212,9 +214,10 @@ void *producer() {
         // Increase consumer counter
         c = (c + 1) % NUM_CONSUMERS;
         
+        float exec_time = exec / 1000;
         printf("[PRODUCER] Created process: pid %d, priority %d, quantum %d and"
                 " expected execution time %.4f ms\n", proc.id, proc.static_prio,
-                proc.quantum, (exec / 1000));
+                proc.quantum, exec_time);
         
         // Remove sleep if not worrying about output speed
         usleep(100000);
@@ -323,8 +326,125 @@ proc_struct *find_and_remove_min_prio(proc_struct rq[QUEUE_SIZE], int count) {
  * have even numbers of processes in each queue.
  */
 void *balance() {
-    printf("Balancer!\n");
-    pthread_exit(NULL);
+    printf("[BALANCER] Started...\n");
+    
+    while(1) {
+        // Run every 300ms
+        usleep(300000);
+        
+        // Loop over each consumer
+        int i;
+        for (i = 0; i < NUM_CONSUMERS; i++) {
+            // Request mutex lock for consumer
+            pthread_mutex_lock(&mutexes[i]);
+            
+            // Find the run queue with the least processes in it
+            int min, max;
+            min = *find_min(consumers[i].zero_size, consumers[i].one_size, 
+                            consumers[i].two_size);
+            
+            // Find the run queue with the most processes in it
+            max = *find_max(consumers[i].zero_size, consumers[i].one_size, 
+                            consumers[i].two_size);
+            
+            // Find the number of processes to add
+            int num_to_add;
+            num_to_add = (max - min) / 2;
+            
+            // Remove the process from the back of the queue
+            proc_struct procs[num_to_add];
+            int j;
+            if (max == consumers[i].zero_size) {
+                for (j = 0; j < num_to_add; j++) {
+                    procs[j] = consumers[i].rq_zero[consumers[i].zero_size - 1];
+                    consumers[i].zero_size = (consumers[i].zero_size - 1) % QUEUE_SIZE;
+                }
+            } else if (max == consumers[i].one_size) {
+                for (j = 0; j < num_to_add; j++) {
+                    procs[j] = consumers[i].rq_one[consumers[i].one_size - 1];
+                    consumers[i].one_size = (consumers[i].one_size - 1) % QUEUE_SIZE;
+                }
+            } else {
+                for (j = 0; j < num_to_add; j++) {
+                    procs[j] = consumers[i].rq_two[consumers[i].two_size - 1];
+                    consumers[i].two_size = (consumers[i].two_size - 1) % QUEUE_SIZE;
+                }
+            }
+            
+            // Add the processes to the back of the min run queue
+            if (max == consumers[i].zero_size) {
+                for (j = 0; j < num_to_add; j++) {
+                    consumers[i].rq_zero[consumers[i].zero_size - 1] = procs[j];
+                    consumers[i].zero_size = (consumers[i].zero_size + 1) % QUEUE_SIZE;
+                }
+            } else if (max == consumers[i].one_size) {
+                for (j = 0; j < num_to_add; j++) {
+                    consumers[i].rq_one[consumers[i].one_size - 1] = procs[j];
+                    consumers[i].one_size = (consumers[i].one_size + 1) % QUEUE_SIZE;
+                }
+            } else {
+                for (j = 0; j < num_to_add; j++) {
+                    consumers[i].rq_two[consumers[i].two_size - 1] = procs[j];
+                    consumers[i].two_size = (consumers[i].two_size + 1) % QUEUE_SIZE;
+                }
+            }
+            pthread_mutex_unlock(&mutexes[i]);
+            if (num_to_add != 0) {
+                printf("[BALANCER] Ran balance on consumer %d. Moved %d processes"
+                        " from RQ with %d process(es) to RQ with %d process(es).\n", i, 
+                        num_to_add, max, min);
+            } else {
+                printf("[BALANCER] Ran balance on consumer %d. Queues already"
+                        " balanced!\n", i);
+            }
+        }
+        
+        // Check if there are no more processes being created, and if so exit
+        if (pid >= NUM_PROC) {
+            printf("[Balancer] No programs left to balance! Exiting...\n");
+            pthread_exit(NULL);
+        }
+    }
+}
+
+/**
+ * Method that finds the max value between the three run queue sizes and
+ * returns the index of the max.
+ * 
+ * @param a RQ0 size
+ * @param b RQ1 size
+ * @param c RQ2 size
+ * @return Run queue index that has highest size
+ */
+int *find_max(int a, int b, int c) {
+     int m = a;
+     (void)((m < b) && (m = b));
+     (void)((m < c) && (m = c));
+     
+     int *p = malloc(sizeof(int));
+     *p = m;
+     
+     return p;
+}
+
+/**
+ * Method that finds the min value between the three run queue sizes and
+ * returns the index of the min.
+ * 
+ * @param a RQ0 size
+ * @param b RQ1 size
+ * @param c RQ2 size
+ * @return Run queue index that has smallest size
+ */
+int *find_min(int a, int b, int c) {
+     int m = a;
+     (void)((m > b) && (m = b));
+     (void)((m > c) && (m = c));
+     
+     int *p = malloc(sizeof(int));
+     *p = m;
+     
+     return p;
 }
 
 /**
@@ -364,7 +484,7 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
                             (double) (finish.tv_sec - proc.arrival_time.tv_sec) * 1000;
         
         // Print the process information
-        printf("[CONSUMER %d] Finished FIFO process: pid %d, priority %d, "
+        printf("\t[CONSUMER %d] Finished FIFO process: pid %d, priority %d, "
                "from RQ%d for %#.2f ms. Turnaround time was %#.3f ms.\n", 
                thread_num, proc.id, proc.dynamic_prio, rq, exec, turnaround);
         
@@ -383,7 +503,7 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
                                 (double) (finish.tv_sec - proc.arrival_time.tv_sec) * 1000;
         
             // Print the process information
-            printf("[CONSUMER %d] Finished RR process: pid %d, priority %d, "
+            printf("\t[CONSUMER %d] Finished RR process: pid %d, priority %d, "
                    "from RQ%d for %d us. Turnaround time was %#.3f ms.\n", 
                     thread_num, proc.id, proc.dynamic_prio, rq, 
                     proc.time_remain, turnaround);
@@ -397,7 +517,7 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
             // Set the new remaining time
             proc.time_remain = proc.time_remain - proc.quantum;
             
-            printf("[CONSUMER %d] Executed RR process: pid %d, priority %d, "
+            printf("\t[CONSUMER %d] Executed RR process: pid %d, priority %d, "
                     "quantum %d from RQ%d for %d us. Time remaining %d us\n", 
                     thread_num, proc.id, proc.dynamic_prio, proc.quantum, rq,
                     proc.quantum, proc.time_remain);
@@ -417,7 +537,7 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
                                 (double) (finish.tv_sec - proc.arrival_time.tv_sec) * 1000;
         
             // Print the process information
-            printf("[CONSUMER %d] Finished NORMAL process: pid %d, priority %d, "
+            printf("\t[CONSUMER %d] Finished NORMAL process: pid %d, priority %d, "
                    "from RQ%d for %d us. Turnaround time was %#.3f ms.\n", 
                     thread_num, proc.id, proc.dynamic_prio, rq, 
                     proc.time_remain, turnaround);
@@ -493,7 +613,7 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
             
             proc.dynamic_prio = dynamic_prio;
             
-            printf("[CONSUMER %d] Executed NORMAL process: pid %d, old priority %d,"
+            printf("\t[CONSUMER %d] Executed NORMAL process: pid %d, old priority %d,"
                     " new priority %d, quantum %d from RQ%d for %d us. Time remaining %d us\n", 
                     thread_num, proc.id, old_prio, proc.dynamic_prio, proc.quantum, rq,
                     s, proc.time_remain);
@@ -524,4 +644,5 @@ void *emulate_run(proc_struct proc, int thread_num, int rq) {
          }
         pthread_mutex_unlock(&mutexes[thread_num]);
     }
+    return (void *) NULL;
 }
