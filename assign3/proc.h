@@ -16,18 +16,24 @@
 #define PRIO_MAX 140
 #define PRIO_NORM_MIN 100
 #define PRIO_NORM_MAX 140
+#define SCHED_NORMAL 3
 #define PRIO_REAL_MAX 100
+#define MAX_SLEEP_AVG 10000
 #define RATIO 5
+
 
 // Structure for process information
 typedef struct proc_struct {
-    int id;
-    int priority;
-    int sched_type;
-    int quantum;
-    int time_execute;
-    int time_remain;
-    struct timeval starttime;
+    int id;                     // Process ID
+    int static_prio;            // Process static priority 
+    int dynamic_prio;           // Dynamic priority for NORMAL processes 
+    int sched_type;             // Scheduling type (FIFO, NORMAL, or RR)
+    int quantum;                // Time slice
+    int time_execute;           // Estimated execution time
+    int time_remain;            // Remaining time to completion
+    int sleep_avg;              // Average sleep time for time slice calculation
+    struct timeval sleep_start; // Time process starts sleeping in RQ
+    struct timeval arrival_time;// Time process created
 } proc_struct;    
 
 // Structure for circular buffer
